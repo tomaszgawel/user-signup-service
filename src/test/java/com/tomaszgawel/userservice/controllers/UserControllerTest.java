@@ -1,67 +1,80 @@
 package com.tomaszgawel.userservice.controllers;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tomaszgawel.userservice.dto.CreatedUserDTO;
+import com.tomaszgawel.userservice.dto.ErrorMessageDTO;
 import com.tomaszgawel.userservice.dto.UserDTO;
 import com.tomaszgawel.userservice.entities.UserEntity;
 import com.tomaszgawel.userservice.exceptions.InvalidCredentialsException;
 import com.tomaszgawel.userservice.exceptions.UserExistsException;
 import com.tomaszgawel.userservice.services.SignupService;
-import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.server.ResponseStatusException;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 
-import java.net.URI;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
+@AutoConfigureMockMvc
 public class UserControllerTest {
-    @InjectMocks
-    private UserController userController;
 
-    @Mock
+    @MockBean
     private SignupService signupService;
 
-    @Mock
-    UserDTO userDTO;
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
-    public void testShouldThrowExceptionWhenInvalidCredentialsProvided() {
-        // given
-        Mockito.when(signupService.signupUser(Mockito.any())).thenThrow(new InvalidCredentialsException());
-        // when
-        ResponseStatusException thrownException = Assertions.assertThrows(ResponseStatusException.class,
-                () -> userController.signupUser(userDTO));
-        // then
-        Assertions.assertEquals("Invalid credentials provided", thrownException.getReason());
-        Assertions.assertEquals(HttpStatus.FORBIDDEN, thrownException.getStatus());
+    public void testReturnStatus403WhenInvalidCredentialsProvided() throws Exception {
+        Mockito.when(signupService.signupUser(Mockito.any()))
+                .thenThrow(new InvalidCredentialsException());
+        mockMvc.perform(post("/api/v1/user")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UserDTO("user", "password"))))
+                .andExpect(status().isForbidden())
+                .andExpect(content().json(objectMapper.writeValueAsString(new ErrorMessageDTO("Invalid credentials provided"))));
     }
 
     @Test
-    public void testShouldThrowExceptionWhenUsernameExists() {
-        // given
-        Mockito.when(signupService.signupUser(Mockito.any())).thenThrow(new UserExistsException());
-        // when
-        ResponseStatusException thrownException = Assertions.assertThrows(ResponseStatusException.class,
-                () -> userController.signupUser(userDTO));
-        // then
-        Assertions.assertEquals("Username exists", thrownException.getReason());
-        Assertions.assertEquals(HttpStatus.CONFLICT, thrownException.getStatus());
+    public void testReturnStatus403WhenNullCredentialsProvided() throws Exception {
+        Mockito.when(signupService.signupUser(Mockito.any()))
+                .thenThrow(new InvalidCredentialsException());
+        mockMvc.perform(post("/api/v1/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UserDTO(null, null))))
+                .andExpect(status().isForbidden())
+                .andExpect(content().json(objectMapper.writeValueAsString(new ErrorMessageDTO("Invalid credentials provided"))));
     }
 
     @Test
-    public void testReturnResponseEntityWithProperCredentials() {
-        // given
-        Mockito.when(signupService.signupUser(Mockito.any())).thenReturn(new UserEntity(1L, "username", "Password1"));
-        // when
-        ResponseEntity<CreatedUserDTO> responseEntity = userController.signupUser(userDTO);
-        // then
-        Assertions.assertEquals(HttpStatus.CREATED, responseEntity.getStatusCode());
-        Assertions.assertEquals(URI.create("/api/v1/user/1"), responseEntity.getHeaders().getLocation());
-        Assertions.assertEquals(new CreatedUserDTO(1L, "username"), responseEntity.getBody());
+    public void testReturnStatus201WhenValidCredentialsProvided() throws Exception {
+        Mockito.when(signupService.signupUser(Mockito.any()))
+                .thenReturn(new UserEntity(1L, "username", "Password1"));
+        mockMvc.perform(post("/api/v1/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UserDTO("username", "Password1"))))
+                .andExpect(status().isCreated())
+                .andExpect(content().json(objectMapper.writeValueAsString(new CreatedUserDTO(1L, "username"))))
+                .andExpect(header().string(HttpHeaders.LOCATION, "/api/v1/user/1"));
+    }
+    @Test
+    public void testReturnStatus409WhenUsernameExists() throws Exception {
+        Mockito.when(signupService.signupUser(Mockito.any()))
+                .thenThrow(new UserExistsException());
+        mockMvc.perform(post("/api/v1/user")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new UserDTO("username", "Password1"))))
+                .andExpect(status().isConflict())
+                .andExpect(content().json(objectMapper.writeValueAsString(new ErrorMessageDTO("Username exists"))));
     }
 }
